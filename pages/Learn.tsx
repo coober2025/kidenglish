@@ -4,7 +4,7 @@ import { CambridgeLevel, VocabularyCard, UserProgress } from '../types';
 import { FULL_SYLLABUS } from '../data/syllabus';
 import { generateVocabBatch, generateIllustration } from '../services/geminiService';
 import { Button } from '../components/Button';
-import { Volume2, Image as ImageIcon, ChevronRight, Gamepad2, Check, ArrowLeft, Lock, Share2, Star, Sparkles, Coins, Play, CheckCircle2 } from 'lucide-react';
+import { Volume2, Image as ImageIcon, ChevronRight, Gamepad2, Check, ArrowLeft, Lock, Share2, Star, Sparkles, Coins, Play, CheckCircle2, WifiOff } from 'lucide-react';
 import { playSFX } from '../utils/soundEffects';
 import { speak } from '../utils/textToSpeech';
 
@@ -23,6 +23,7 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
   const [selectedUnitId, setSelectedUnitId] = useState<string>('');
   const [vocabList, setVocabList] = useState<VocabularyCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
   
   // Image Generation State
   const [imageLoading, setImageLoading] = useState(false);
@@ -33,10 +34,8 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
   const [matchedIds, setMatchedIds] = useState<Set<string>>(new Set());
   const [shuffledCards, setShuffledCards] = useState<{left: VocabularyCard[], right: VocabularyCard[]}>({ left: [], right: [] });
 
-  // Get units relevant to current level
   const currentUnits = FULL_SYLLABUS.filter(unit => unit.level === level);
 
-  // Reset to map when level changes
   useEffect(() => {
     setMode('topic-selection');
   }, [level]);
@@ -53,28 +52,32 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
     playSFX('click');
     setSelectedUnitId(unitId);
     setMode('loading');
+    setIsOfflineMode(false);
     
     try {
       const cards = await generateVocabBatch(level, unit.title, unit.words);
       if (cards.length === 0) throw new Error("No cards generated");
+      
+      // Check if we got fallback data (indicated by specific ID format)
+      if (cards[0].id.startsWith('offline-')) {
+          setIsOfflineMode(true);
+      }
+
       setVocabList(cards);
       setCurrentIndex(0);
       setMode('study');
     } catch (e) {
       console.error(e);
       setMode('topic-selection');
-      alert("Oops! The magic book is stuck. Please try again!");
+      // Gentle toast instead of blocking alert
+      console.log("Could not load lesson data.");
     }
   };
 
   const handleNextLevel = () => {
-      // Find current unit index
       const currentIndex = currentUnits.findIndex(u => u.id === selectedUnitId);
       if (currentIndex !== -1 && currentIndex < currentUnits.length - 1) {
           const nextUnit = currentUnits[currentIndex + 1];
-          // Determine if locked (it shouldn't be, because we just unlocked it in onLevelComplete, but good to check)
-          const isLocked = !progress.unlockedUnits.includes(nextUnit.id);
-          // Pass false for lock check since we are progressing naturally
           handleSelectUnit(nextUnit.id, false); 
       } else {
           setMode('topic-selection');
@@ -86,14 +89,21 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
     const card = vocabList[currentIndex];
     if (!card || generatedImages[card.id]) return;
     
+    // Skip if offline mode to save user frustration
+    if (isOfflineMode) {
+        alert("Image generation requires internet and API quota.");
+        return;
+    }
+
     setImageLoading(true);
     try {
-      // Use the word + imagePrompt for better accuracy
       const prompt = card.imagePrompt ? `${card.word}, ${card.imagePrompt}` : card.word;
       const base64 = await generateIllustration(prompt);
       if (base64) {
         setGeneratedImages(prev => ({ ...prev, [card.id]: base64 }));
         addCoin(5);
+      } else {
+        alert("Could not paint picture right now. Try again later!");
       }
     } catch (e) {
       console.error(e);
@@ -157,7 +167,7 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
       }
     } else {
       navigator.clipboard.writeText(text);
-      alert("Text copied! You can paste it in WeChat.");
+      alert("Text copied!");
     }
   };
 
@@ -177,7 +187,6 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
              </div>
         ) : (
             <div className="flex flex-col gap-8 relative px-4">
-                {/* The Winding Path - Visual Only */}
                 <div className="absolute left-1/2 top-10 bottom-10 w-2 -translate-x-1/2 -z-10 opacity-20">
                     <svg className="w-full h-full overflow-visible" preserveAspectRatio="none">
                         <path 
@@ -201,7 +210,6 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
                     const stars = progress.completedUnits[unit.id] || 0;
                     const isNext = !isLocked && !isCompleted;
 
-                    // Alternate sides
                     const alignment = index % 2 === 0 ? 'items-start pl-2' : 'items-end pr-2';
 
                     return (
@@ -227,7 +235,6 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
                                         <span className="text-[10px] uppercase font-bold opacity-70 tracking-wider block mt-1.5">{unit.description}</span>
                                     </div>
                                     
-                                    {/* Completion Badge */}
                                     {isCompleted && (
                                         <>
                                             <div className="flex gap-1 absolute -top-3 -right-3 bg-white px-2 py-1.5 rounded-full shadow-md border border-yellow-100 rotate-3 z-20">
@@ -280,8 +287,6 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
   if (mode === 'study') {
     const card = vocabList[currentIndex];
     const hasImage = generatedImages[card.id];
-    
-    // Safety check for emojis: Ensure it's not a text string
     const displayEmoji = card.emoji && card.emoji.length <= 2 ? card.emoji : "🌟";
 
     return (
@@ -290,6 +295,11 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
             <button onClick={() => setMode('topic-selection')} className="text-slate-400 hover:text-slate-600 flex items-center gap-1 text-sm font-bold transition-colors">
                 <ArrowLeft size={18}/> Map
             </button>
+            {isOfflineMode && (
+                <div className="flex items-center gap-1 text-[10px] bg-orange-100 text-orange-600 px-2 py-1 rounded-full font-bold">
+                    <WifiOff size={12}/> Offline Mode
+                </div>
+            )}
             <div className="flex gap-1.5 bg-white p-1 rounded-full shadow-sm border border-slate-100">
                 {vocabList.map((_, i) => (
                     <div key={i} className={`h-2 w-2 rounded-full transition-all ${i === currentIndex ? 'bg-blue-500 w-6' : 'bg-slate-200'}`} />
@@ -299,7 +309,6 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
 
         {/* Card Component */}
         <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200 overflow-hidden border border-white ring-1 ring-slate-100 min-h-[500px] flex flex-col relative transform transition-all duration-500">
-           {/* Image Area */}
            <div className="aspect-[4/3] bg-gradient-to-b from-blue-50 to-white relative flex items-center justify-center overflow-hidden shrink-0 group">
              {hasImage ? (
                 <img src={hasImage} alt={card.word} className="w-full h-full object-cover animate-in fade-in duration-700" />
@@ -309,7 +318,7 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
                 </div>
              )}
              
-             {!hasImage && !imageLoading && (
+             {!hasImage && !imageLoading && !isOfflineMode && (
                 <Button variant="secondary" size="sm" onClick={handleGenerateImage} className="absolute bottom-6 right-6 shadow-xl z-10 rounded-full pl-3 pr-4 py-2 border-white/50 border-t backdrop-blur-md">
                     <ImageIcon size={18} /> Reveal Magic
                 </Button>
@@ -395,6 +404,7 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
     );
   }
 
+  // ... game renderers logic remains similar, just pass-through
   if (mode === 'game') {
       return (
           <div className="space-y-4 pb-20">
@@ -468,7 +478,6 @@ export const Learn: React.FC<Props> = ({ level, addCoin, progress, onLevelComple
   }
 
   if (mode === 'game-success') {
-      // Find current unit index to see if there is a next unit
       const currentUnitIndex = currentUnits.findIndex(u => u.id === selectedUnitId);
       const nextUnit = currentUnitIndex !== -1 && currentUnitIndex < currentUnits.length - 1 
         ? currentUnits[currentUnitIndex + 1] 
