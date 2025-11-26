@@ -24,7 +24,8 @@ const AVATARS = [
 ];
 
 const INITIAL_PROGRESS: UserProgress = {
-  unlockedUnits: ['starters-1', 'movers-1', 'flyers-1'], // Unlock the first unit of each level
+  // CRITICAL UPDATE: Unlock ALL units by default for testing/preview
+  unlockedUnits: FULL_SYLLABUS.map(u => u.id),
   completedUnits: {} as any,
   totalStars: 0,
   mistakes: []
@@ -44,25 +45,25 @@ const INITIAL_STATE: AppState = {
 const App: React.FC = () => {
   // Initialize state from localStorage if available
   const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem('cambridge-kids-state-v4'); 
+    const saved = localStorage.getItem('cambridge-kids-state-v6'); // Bump version to force reset
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         return {
           ...parsed,
           progress: {
-            ...INITIAL_PROGRESS,
             ...parsed.progress,
-            unlockedUnits: parsed.progress.unlockedUnits.length ? parsed.progress.unlockedUnits : INITIAL_PROGRESS.unlockedUnits,
-            mistakes: parsed.progress.mistakes || []
+            // Ensure all units remain unlocked even if loading old state
+            unlockedUnits: [...new Set([...(parsed.progress.unlockedUnits || []), ...FULL_SYLLABUS.map(u => u.id)])],
           },
+          // Ensure defaults exist
           currentAvatar: parsed.currentAvatar || 'student',
           unlockedAvatars: parsed.unlockedAvatars || ['student', 'girl']
         };
       } catch (e) {
-        console.error("Failed to parse saved state - clearing corrupted data", e);
-        // CRITICAL FIX: If state is corrupted (unterminated JSON), clear it to prevent crash loop
-        localStorage.removeItem('cambridge-kids-state-v4');
+        console.error("Failed to parse saved state", e);
+        // If error, return initial state (which has everything unlocked)
+        return INITIAL_STATE;
       }
     }
     return INITIAL_STATE;
@@ -76,9 +77,7 @@ const App: React.FC = () => {
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
     if (state.lastLoginDate !== today) {
-      // It's a new day!
       let newStreak = state.streakDays;
-      
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayString = yesterday.toISOString().split('T')[0];
@@ -86,7 +85,7 @@ const App: React.FC = () => {
       if (state.lastLoginDate === yesterdayString) {
         newStreak += 1;
       } else {
-        newStreak = 1; // Streak reset
+        newStreak = 1; 
       }
 
       setState(prev => ({
@@ -95,6 +94,7 @@ const App: React.FC = () => {
         streakDays: newStreak
       }));
       
+      // Delay bonus show slightly
       setTimeout(() => {
           setShowDailyBonus(true);
           playSFX('success');
@@ -106,7 +106,7 @@ const App: React.FC = () => {
   useEffect(() => {
     setSaveStatus('saving');
     try {
-      localStorage.setItem('cambridge-kids-state-v4', JSON.stringify(state));
+      localStorage.setItem('cambridge-kids-state-v6', JSON.stringify(state));
       setTimeout(() => setSaveStatus('saved'), 500);
     } catch (e) {
       console.error("Failed to save state", e);
@@ -127,30 +127,12 @@ const App: React.FC = () => {
     playSFX('success');
     setState(prev => {
       const newCompleted = { ...prev.progress.completedUnits, [unitId]: stars };
-      
-      // Logic to unlock the next unit IN THE SAME LEVEL
-      let newUnlocked = [...prev.progress.unlockedUnits];
-      const currentUnitIndex = FULL_SYLLABUS.findIndex(u => u.id === unitId);
-      
-      if (currentUnitIndex !== -1 && currentUnitIndex < FULL_SYLLABUS.length - 1) {
-        // Check if next unit belongs to same level
-        const currentLevel = FULL_SYLLABUS[currentUnitIndex].level;
-        const nextUnit = FULL_SYLLABUS[currentUnitIndex + 1];
-        
-        if (nextUnit && nextUnit.level === currentLevel) {
-             if (!newUnlocked.includes(nextUnit.id)) {
-                newUnlocked.push(nextUnit.id);
-             }
-        }
-      }
-
       return {
         ...prev,
         coins: prev.coins + (stars * 10), 
         progress: {
           ...prev.progress,
           completedUnits: newCompleted,
-          unlockedUnits: newUnlocked,
           totalStars: prev.progress.totalStars + stars
         }
       };
