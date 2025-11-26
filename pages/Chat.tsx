@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CambridgeLevel, ChatMessage } from '../types';
 import { createChatSession, translateToChinese } from '../services/geminiService';
-import { ChatSession } from '@google/genai';
+import { Chat } from '@google/genai';
 import { Button } from '../components/Button';
 import { Send, User, Bot, Sparkles, Volume2, Languages, Loader2 } from 'lucide-react';
 import { playSFX } from '../utils/soundEffects';
@@ -12,7 +12,7 @@ interface Props {
 }
 
 export const Chat: React.FC<Props> = ({ level }) => {
-  const [session, setSession] = useState<ChatSession | null>(null);
+  const [session, setSession] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
